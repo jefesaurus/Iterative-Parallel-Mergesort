@@ -296,7 +296,6 @@ void AllTest(int num_nums) {
   memcpy(nums, basenums, sizeof(int)*num_nums);
 
   GetTime(&start);
-  ParallelMergeSort(nums, num_nums, 8);
   qsort(nums, num_nums, sizeof(int), comp);
   GetTime(&end);
   assert(IsSorted(nums, num_nums));
