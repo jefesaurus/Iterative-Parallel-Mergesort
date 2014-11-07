@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/time.h>
+#ifdef __MACH__
+#include <mach/clock.h>
+#include <mach/mach.h>
+#endif
+
+
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
@@ -14,7 +20,7 @@
 // Merges the two lists defined as [low, mid) and [mid, high)
 // Uses the temp space supplied for swap space.
 // This needs to have a size of at least (high - low).
-inline void Merge(int* nums, int* temp, int low, int mid, int high) {
+void Merge(int* nums, int* temp, int low, int mid, int high) {
   int i = 0;
   int low_d = low;
   int mid_d = mid;
@@ -37,7 +43,7 @@ inline void Merge(int* nums, int* temp, int low, int mid, int high) {
   memcpy(&(nums[low]), temp, sizeof(int)*(high - low));
 }
 
-inline void MergeLevel(int* nums, int low, int high, int size) {
+void MergeLevel(int* nums, int low, int high, int size) {
   int merged_size = size*2;
   int* temp_space = (int*)malloc(sizeof(int) * merged_size);
   int rem = (high - low) % merged_size;
@@ -142,6 +148,7 @@ void* WorkLoop(void* args_i) {
     }
   }
   pthread_cond_signal(args->signal);
+  return NULL;
 }
 
 void ParallelMergeSort(int* nums, int num_nums, int num_workers) {
@@ -169,6 +176,20 @@ void ParallelMergeSort(int* nums, int num_nums, int num_workers) {
   FreeWorkNode(tree);
 }
 
+inline void GetTime(struct timespec* ts) {
+  #ifdef __MACH__ // OS X does not have clock_gettime, use clock_get_time
+  clock_serv_t cclock;
+  mach_timespec_t mts;
+  host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+  clock_get_time(cclock, &mts);
+  mach_port_deallocate(mach_task_self(), cclock);
+  ts->tv_sec = mts.tv_sec;
+  ts->tv_nsec = mts.tv_nsec;
+  #else
+  clock_gettime(CLOCK_MONOTONIC, ts);
+  #endif
+}
+
 void SerialTest(int num_nums) {
   srand(time(NULL));
   int i;
@@ -181,9 +202,9 @@ void SerialTest(int num_nums) {
   }
 
   struct timespec start, end;
-  clock_gettime(CLOCK_MONOTONIC, &start);
+  GetTime(&start);
   MergeSort(nums, 0, num_nums);
-  clock_gettime(CLOCK_MONOTONIC, &end);
+  GetTime(&end);
   assert(IsSorted(nums, num_nums));
   printf("Serial: %f\n", (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0);
 
@@ -204,16 +225,16 @@ void ParallelTest(int num_nums) {
   }
 
   struct timespec start, end;
-  clock_gettime(CLOCK_MONOTONIC, &start);
+  GetTime(&start);
   ParallelMergeSort(nums, num_nums, 8);
-  clock_gettime(CLOCK_MONOTONIC, &end);
+  GetTime(&end);
   assert(IsSorted(nums, num_nums));
   printf("Parallel: %f\n", (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0);
 
   free(nums);
 }
 
-inline int comp (const void * elem1, const void * elem2) {
+int comp (const void * elem1, const void * elem2) {
     int f = *((int*)elem1);
     int s = *((int*)elem2);
     if (f > s) return  1;
@@ -233,10 +254,51 @@ void BuiltInTest(int num_nums) {
   }
 
   struct timespec start, end;
-  clock_gettime(CLOCK_MONOTONIC, &start);
+  GetTime(&start);
   ParallelMergeSort(nums, num_nums, 8);
   qsort(nums, num_nums, sizeof(int), comp);
-  clock_gettime(CLOCK_MONOTONIC, &end);
+  GetTime(&end);
+  assert(IsSorted(nums, num_nums));
+  printf("Built in: %f\n", (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0);
+
+  free(nums);
+}
+
+void AllTest(int num_nums) {
+  srand(time(NULL));
+  int i;
+
+  int* basenums = (int*)malloc(sizeof(int) * num_nums);
+  int* nums = (int*)malloc(sizeof(int) * num_nums);
+
+  // Generate a bunch of random numbers
+  for (i = 0; i < num_nums; i++) {
+     basenums[i] = rand();
+  }
+
+  struct timespec start, end;
+  memcpy(nums, basenums, sizeof(int)*num_nums);
+
+  GetTime(&start);
+  ParallelMergeSort(nums, num_nums, 8);
+  GetTime(&end);
+  assert(IsSorted(nums, num_nums));
+  printf("Parallel: %f\n", (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0);
+
+  memcpy(nums, basenums, sizeof(int)*num_nums);
+
+  GetTime(&start);
+  MergeSort(nums, 0, num_nums);
+  GetTime(&end);
+  assert(IsSorted(nums, num_nums));
+  printf("Serial: %f\n", (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0);
+
+  memcpy(nums, basenums, sizeof(int)*num_nums);
+
+  GetTime(&start);
+  ParallelMergeSort(nums, num_nums, 8);
+  qsort(nums, num_nums, sizeof(int), comp);
+  GetTime(&end);
   assert(IsSorted(nums, num_nums));
   printf("Built in: %f\n", (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0);
 
@@ -244,8 +306,9 @@ void BuiltInTest(int num_nums) {
 }
 
 int main() {
-  ParallelTest(pow(2, 25));
-  SerialTest(pow(2, 25));
-  BuiltInTest(pow(2, 25));
+  //ParallelTest(pow(2, 26));
+  //SerialTest(pow(2, 26));
+  //BuiltInTest(pow(2, 26));
+  AllTest(pow(2, 26));
   return 0;
 }
