@@ -15,7 +15,7 @@ Built in: 5.130592
 
 ============================
 Build it with:
-gcc iterative_mergesort.c -lpthread -lm -msse -msse2 -msse3 -O3
+gcc iterative_mergesort.c -lpthread -lm -lrt -msse -msse2 -msse3 -O3
 
 Run it with:
 ./a.out
